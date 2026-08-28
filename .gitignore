@@ -1,0 +1,5 @@
+*.kate-swp
+*.bak
+*.orig
+*.sqlite3
+*.csv
