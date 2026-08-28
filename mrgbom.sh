@@ -1,9 +1,23 @@
 #!/usr/bin/bash
 
-# Import BOM CSV files into a SQLite database, merge them, export the data.
+# Synopsis: import BOM CSV files into a SQLite database, merge them, export the data.
 
+# this script absolute path, with no trailing slash:
+SRC_DIR=${0%$(basename $0)}
+SRC_DIR=${SRC_DIR%/}
+
+# source SQL snippets:
+SQL_CREATE_TABLE=$SRC_DIR/create-table.sql
+SQL_CREATE_VIEW=$SRC_DIR/create-view.sql
+
+# SQL script generated to create a database that fits the number of BOMs:
+SQL_SCRIPT=mrgbom.sql
+
+# database created:
 DBNAME=mrgbom.sqlite3
-SQL_SCRIPT=${0%$(basename $0)}/mkdb.sql
+
+# import operations are logged and timestamped:
+LOGFILE=mrgbom.log
 
 function usage()
 {
@@ -13,10 +27,10 @@ function usage()
 	echo "a CSV file."
 	echo
 	echo "Options:"
-	echo "  -c               Create the database $DBNAME. Overwrite the existing one."
 	echo "  -f               Try to find BOMs in subdirectories 'bom/' (case insensitive),"
 	echo "                   print to stdout and exit."
-	echo "  -i BOMLIST       Import the CSV files into the database listed in BOMLIST,"
+	echo "  -i BOMLIST       Create the database $DBNAME, overwritting any existing copy."
+	echo "                   Import the CSV files into the database listed in BOMLIST,"
 	echo "                   a text file, containing one file name per line. Allowed"
 	echo "                   characters in file names are letters, numbers, hyphen"
 	echo "                   and underscore."
@@ -27,12 +41,14 @@ function usage()
 	echo "  Create a BOM list"
 	echo "    $(basename $0) -f > bom_list.txt"
 	echo
-	echo "  Create the databse and import the BOMs:"
-	echo "    $(basename $0) -c"
+	echo "  Import the BOMs into a new database:"
 	echo "    $(basename $0) -i bom_list.txt"
 	echo
 	echo "  Export the merged BOM to CSV:"
 	echo "    $(basename $0) -e full-bom.csv"
+	echo
+	echo "  Import/export in a single command:"
+	echo "    $(basename $0) -i bom_list.txt -e full-bom.csv"
 }
 
 if [ $# -lt 1 ]; then
@@ -41,16 +57,12 @@ if [ $# -lt 1 ]; then
 	exit 1
 fi
 
-DO_CREATE_DB=0
 DO_IMPORT_CSV=0
 DO_EXPORT=0
 BOMLIST=
 OUTFILE=
-while getopts "cfi:e:h" opt; do
+while getopts "fi:e:h" opt; do
     case "$opt" in
-	c)
-		DO_CREATE_DB=1
-		;;
 	f)
 		find . -name "*.csv" | grep -i '\/bom\/.*\.csv$' | sort
 		exit 0
@@ -74,31 +86,13 @@ while getopts "cfi:e:h" opt; do
     esac
 done
 
-if [ $DO_CREATE_DB -eq 1 ]; then
-	choice=y
-	read -p "WARNING: $DBNAME will be deleted. Continue (Y/n)? " choice
-	case "$choice" in
-	y|Y )
-		;;
-	n|N )
-		exit 0
-		;;
-	* )
-		if [ "$choice" != "" ]; then
-			echo "Invalid: '$choice'"; exit 1
-		fi
-		;;
-	esac
-	rm -f $DBNAME
-	sqlite3 $DBNAME < $SQL_SCRIPT
-fi
 
 if [ $DO_IMPORT_CSV -eq 1 ]; then
 	if [ ! -f $BOMLIST ]; then
 		echo "ERROR: BOM list not found: $BOMLIST"
 		exit 1
 	fi
-	# read the CSV file names from
+	# read the CSV file names from BOMLIST
 	arr_files=()
 	while read f; do
 		if [ -f $f ]; then
@@ -109,6 +103,23 @@ if [ $DO_IMPORT_CSV -eq 1 ]; then
 		fi
 	done < $BOMLIST
 
+	# create the database
+	echo -e "-- Before importing, replace \"\" with 0 in columns sourced and placed\n" > $SQL_SCRIPT
+	SQL_SELECT_ALL=
+	for i in $(seq ${#arr_files[@]})
+	do
+		if [ $i -gt 1 ]; then echo >> $SQL_SCRIPT; fi
+		cat $SQL_CREATE_TABLE | sed "s/TABLE_NAME/pcbbom$i/" >> $SQL_SCRIPT
+
+		if [ $i -gt 1 ]; then SQL_SELECT_ALL+="\n    UNION ALL\n"; fi
+		SQL_SELECT_ALL+="    SELECT * FROM pcbbom$i"
+	done
+	echo >> $SQL_SCRIPT
+	cat $SQL_CREATE_VIEW | sed "s/UNION_SELECT_FROM_ALL_TABLES/$SQL_SELECT_ALL/" >> $SQL_SCRIPT
+	rm -f $DBNAME
+	sqlite3 $DBNAME < $SQL_SCRIPT
+
+	# import the BOMs into the database
 	idx=1
 	for f in "${arr_files[@]}"
 	do
@@ -120,7 +131,7 @@ if [ $DO_IMPORT_CSV -eq 1 ]; then
 		cp $f $f.tmp
 		sed -E -e 's/""/0/1' -e 's/""/0/1' -e 's/\([a-zA-Z0-9_ -]+\)//g' $f > $f.tmp
 		TABLE=pcbbom$idx
-		echo "Importing $f into table $TABLE..."
+		echo "$(date -Iseconds) Importing $f into table $TABLE..." | tee -a $LOGFILE
 		sqlite3 $DBNAME ".mode csv" ".import -skip 1 $f.tmp $TABLE"
 		# remove the hyphen in Farnell part numbers
 		sqlite3 $DBNAME \
@@ -130,5 +141,9 @@ if [ $DO_IMPORT_CSV -eq 1 ]; then
 fi
 
 if [ $DO_EXPORT -eq 1 ]; then
+	if [ ! -f $DBNAME ]; then
+		echo "ERROR: database not found: $DBNAME"
+		exit 1
+	fi
 	sqlite3 $DBNAME ".mode csv" "SELECT * FROM pcb_all;" > $OUTFILE
 fi
