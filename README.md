@@ -1,6 +1,6 @@
 # mrgbom
 
-A Bash script to merge BOMs from several PCBs, possibly created with KiCAD, into one, to ease the process of placing orders.
+A Bash script to merge an arbitrary number of BOMs, from several PCBs, possibly created with KiCAD, into a single CSV file, to ease the process of placing orders.
 
 ## Dependencies
 
@@ -25,7 +25,7 @@ project/
 $ cd project
 $ mrgbom -f
 ./pcb_project1/bom/pcb_project1.csv
-./pcb_project2/bom/pcb_project2.csv
+./pcb_project2/BOM/pcb_project2.csv
 $ mrgbom -f > bom_list.txt
 ```
 
@@ -66,7 +66,7 @@ In the SQLite3 database, a view is created to:
 
 ## Export
 
-Exporting the data exposed in by the SQL view to a CSV file is then straightforward.
+Exporting the data exposed by the SQL view to a CSV file is then straightforward.
 The CSV file can be imported in any spreadsheet editor.
 
-Once the merged BOM is exported to CSV, the `.sqlite3` file is no longer needed and can be deleted.
+Once the merged BOM is exported to CSV, the `.sql` and `.sqlite3` files are no longer needed and can be deleted.
