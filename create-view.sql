@@ -18,7 +18,9 @@ all_parts AS (
         description,
         comment,
         footprint,
-        parts_per_sales_unit
+        parts_per_sales_unit,
+        manufacturer,
+        manufacturer_part_number
     FROM source_rows
     WHERE NULLIF(TRIM(vendor), '') IS NOT NULL
       AND NULLIF(TRIM(vendor_part_number), '') IS NOT NULL
@@ -32,7 +34,9 @@ all_parts AS (
         description,
         comment,
         footprint,
-        NULLIF(TRIM(mate_parts_per_sales_unit), '') AS parts_per_sales_unit
+        NULLIF(TRIM(mate_parts_per_sales_unit), '') AS parts_per_sales_unit,
+        manufacturer,
+        manufacturer_part_number
     FROM source_rows
     WHERE NULLIF(TRIM(mate_vendor), '') IS NOT NULL
       AND NULLIF(TRIM(mate_vendor_part_number), '') IS NOT NULL
@@ -46,6 +50,8 @@ SELECT
     MAX(description) AS description,
     MAX(comment) AS comment,
     MAX(footprint) AS footprint,
-    MAX(parts_per_sales_unit) AS parts_per_sales_unit
+    MAX(parts_per_sales_unit) AS parts_per_sales_unit,
+    MAX(manufacturer) AS manufacturer,
+    MAX(manufacturer_part_number) AS manufacturer_part_number
 FROM all_parts
 GROUP BY vendor, vendor_part_number;
